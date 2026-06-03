@@ -98,17 +98,28 @@ class AddToCartViewTest(TestCase):
         )
 
     def test_add_to_cart_new_item(self):
-        response = self.client.get(reverse('cart:add_to_cart', args=[self.product.pk]))
+        response = self.client.post(reverse('cart:add_to_cart', args=[self.product.pk]))
         self.assertEqual(response.status_code, 302)
         cart = Cart.objects.get(user=self.user)
         self.assertEqual(cart.items.count(), 1)
         self.assertEqual(cart.items.first().quantity, 1)
 
     def test_add_to_cart_increment(self):
-        self.client.get(reverse('cart:add_to_cart', args=[self.product.pk]))
-        self.client.get(reverse('cart:add_to_cart', args=[self.product.pk]))
+        self.client.post(reverse('cart:add_to_cart', args=[self.product.pk]))
+        self.client.post(reverse('cart:add_to_cart', args=[self.product.pk]))
         cart = Cart.objects.get(user=self.user)
         self.assertEqual(cart.items.first().quantity, 2)
+
+    def test_add_to_cart_get_rejected(self):
+        response = self.client.get(reverse('cart:add_to_cart', args=[self.product.pk]))
+        self.assertEqual(response.status_code, 405)
+
+    def test_add_to_cart_out_of_stock(self):
+        self.product.stock = 0
+        self.product.save()
+        response = self.client.post(reverse('cart:add_to_cart', args=[self.product.pk]))
+        self.assertEqual(response.status_code, 302)
+        self.assertFalse(Cart.objects.filter(user=self.user, items__product=self.product).exists())
 
 
 class RemoveFromCartViewTest(TestCase):
@@ -124,9 +135,13 @@ class RemoveFromCartViewTest(TestCase):
         self.item = CartItem.objects.create(cart=cart, product=product, quantity=1)
 
     def test_remove_item(self):
-        response = self.client.get(reverse('cart:remove_from_cart', args=[self.item.pk]))
+        response = self.client.post(reverse('cart:remove_from_cart', args=[self.item.pk]))
         self.assertEqual(response.status_code, 302)
         self.assertEqual(CartItem.objects.count(), 0)
+
+    def test_remove_item_get_rejected(self):
+        response = self.client.get(reverse('cart:remove_from_cart', args=[self.item.pk]))
+        self.assertEqual(response.status_code, 405)
 
 
 class UpdateCartItemViewTest(TestCase):
@@ -157,3 +172,16 @@ class UpdateCartItemViewTest(TestCase):
         )
         self.assertEqual(response.status_code, 302)
         self.assertFalse(CartItem.objects.filter(pk=self.item.pk).exists())
+
+    def test_update_quantity_invalid_string(self):
+        response = self.client.post(
+            reverse('cart:update_cart_item', args=[self.item.pk]),
+            {'quantity': 'abc'},
+        )
+        self.assertEqual(response.status_code, 302)
+        self.item.refresh_from_db()
+        self.assertEqual(self.item.quantity, 1)
+
+    def test_update_cart_item_get_rejected(self):
+        response = self.client.get(reverse('cart:update_cart_item', args=[self.item.pk]))
+        self.assertEqual(response.status_code, 405)

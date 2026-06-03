@@ -1,4 +1,4 @@
-from django.db import models
+from django.db import models, transaction
 from django.conf import settings
 
 from products.models import Product
@@ -45,14 +45,15 @@ class Order(models.Model):
         return self.status in ('pending', 'confirmed')
 
     def cancel(self):
-        if self.is_cancellable:
+        if not self.is_cancellable:
+            return False
+        with transaction.atomic():
             self.status = 'cancelled'
-            for item in self.items.all():
+            for item in self.items.select_related('product').all():
                 item.product.stock += item.quantity
                 item.product.save()
             self.save()
-            return True
-        return False
+        return True
 
 
 class OrderItem(models.Model):
