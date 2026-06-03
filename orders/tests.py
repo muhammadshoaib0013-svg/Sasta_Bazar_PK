@@ -161,6 +161,22 @@ class OrderCreateViewTest(TestCase):
         response = self.client.get(reverse('orders:order_create'))
         self.assertEqual(response.status_code, 302)
 
+    def test_order_create_insufficient_stock(self):
+        self.product.stock = 1
+        self.product.save()
+        data = {
+            'shipping_address': '789 Blvd',
+            'city': 'Multan',
+            'phone_number': '03002222222',
+            'payment_method': 'cod',
+            'notes': '',
+        }
+        response = self.client.post(reverse('orders:order_create'), data)
+        self.assertEqual(response.status_code, 200)
+        self.assertFalse(Order.objects.filter(user=self.user).exists())
+        self.product.refresh_from_db()
+        self.assertEqual(self.product.stock, 1)
+
     def test_order_create_requires_login(self):
         self.client.logout()
         response = self.client.get(reverse('orders:order_create'))
@@ -217,9 +233,21 @@ class OrderCancelViewTest(TestCase):
         )
 
     def test_cancel_order(self):
-        response = self.client.get(reverse('orders:order_cancel', args=[self.order.pk]))
+        response = self.client.post(reverse('orders:order_cancel', args=[self.order.pk]))
         self.assertEqual(response.status_code, 302)
         self.order.refresh_from_db()
         self.assertEqual(self.order.status, 'cancelled')
         self.product.refresh_from_db()
         self.assertEqual(self.product.stock, 12)
+
+    def test_cancel_order_get_rejected(self):
+        response = self.client.get(reverse('orders:order_cancel', args=[self.order.pk]))
+        self.assertEqual(response.status_code, 405)
+
+    def test_cancel_non_cancellable_order(self):
+        self.order.status = 'shipped'
+        self.order.save()
+        response = self.client.post(reverse('orders:order_cancel', args=[self.order.pk]))
+        self.assertEqual(response.status_code, 302)
+        self.order.refresh_from_db()
+        self.assertEqual(self.order.status, 'shipped')
